@@ -1,5 +1,5 @@
 #!/bin/bash
-set -e
+set -euo pipefail
 
 if [ "$EUID" -ne 0 ]; then
   echo "Elevating privileges (sudo)..."
@@ -16,11 +16,13 @@ FSTAB_BACKUP="/etc/fstab.bak.$(date +%Y%m%d%H%M%S)"
 cp "$FSTAB_PATH" "$FSTAB_BACKUP"
 echo "fstab backup created at $FSTAB_BACKUP"
 
-ROOT_DEV=$(findmnt -no SOURCE / | sed 's/\[.*\]//')
+ROOT_DEV=$(findmnt -no UUID /)
+ROOT_DEV="/dev/disk/by-uuid/${ROOT_DEV}"
 echo "Root device: $ROOT_DEV"
 
 mkdir -p /mnt/topsetup
 mount -o subvolid=5 "$ROOT_DEV" /mnt/topsetup
+trap 'umount /mnt/topsetup 2>/dev/null || true' EXIT
 
 CURRENT_DEFAULT_PATH=$(btrfs subvolume get-default / | awk '{print $NF}')
 NEW_ROOT_NAME="@"
@@ -61,7 +63,9 @@ while IFS= read -r line || [ -n "$line" ]; do
       new_options="${new_options:+$new_options,}noatime"
     fi
 
-    if [[ "$new_options" == *compress=* ]]; then
+    if [[ "$new_options" == *compress-force=* ]]; then
+      new_options=$(echo "$new_options" | sed -E 's/compress-force=[a-z0-9:]+/compress-force=zstd/')
+    elif [[ "$new_options" == *compress=* ]]; then
       new_options=$(echo "$new_options" | sed -E 's/compress=[a-z0-9:]+/compress=zstd/')
     else
       new_options="${new_options:+$new_options,}compress=zstd"

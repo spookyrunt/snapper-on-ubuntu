@@ -1,5 +1,5 @@
 #!/bin/bash
-set -e
+set -euo pipefail
 
 if [ "$EUID" -ne 0 ]; then
   exec sudo bash "$0" "$@"
