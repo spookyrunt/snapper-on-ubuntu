@@ -10,3 +10,6 @@
 ### setup.sh
 - Separates the root subvolume (`@`) from the snapshot tree, tunes `/etc/fstab` (`noatime`, `compress=zstd`, separate `/.snapshots` mount), and installs/configures `snapper` (timeline + apt hooks, automatic cleanup).
 - `rollback.sh` depends on the resulting `@` + `/.snapshots` layout.
+
+### setup-swapfile.sh
+- Creates a Snapper-compatible Btrfs swapfile under `/@swap/` subvolume and edit `/etc/fstab` accordingly.
