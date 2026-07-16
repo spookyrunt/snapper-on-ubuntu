@@ -5,6 +5,50 @@ if [ "$EUID" -ne 0 ]; then
   exec sudo bash "$0" "$@"
 fi
 
+# --- argument pre-processing -------------------------------------------------
+# Pull --silent out of the args wherever it appears, leave the rest untouched.
+SILENT=0
+ARGS=()
+for arg in "$@"; do
+  if [ "$arg" = "--silent" ]; then
+    SILENT=1
+  else
+    ARGS+=("$arg")
+  fi
+done
+set -- "${ARGS[@]+"${ARGS[@]}"}"
+
+usage() {
+  echo "Usage: rollback <snapshot-number> [--silent]"
+  echo "       rollback --finish [--silent]   (manual cleanup, only needed if auto-finish failed)"
+  echo "       rollback --auto-finish         (used internally by the systemd unit)"
+  echo "Run 'sudo snapper list' to see available snapshot numbers."
+}
+
+if [ $# -eq 0 ]; then
+  usage
+  exit 1
+fi
+
+if [ $# -gt 1 ]; then
+  echo "Error: unexpected extra argument(s): ${*:2}"
+  usage
+  exit 1
+fi
+
+# --- logging -------------------------------------------------------------------
+# Skipped in --auto-finish mode (unattended boot; output goes to the journal
+# via systemd anyway) and when --silent was given.
+if [ "$1" != "--auto-finish" ] && [ "$SILENT" -ne 1 ]; then
+  TIMESTAMP=$(date '+%Y%m%d_%H%M%S')
+  LOG_FILE="/var/log/rollback_${TIMESTAMP}.log"
+  exec > >(tee -i "$LOG_FILE") 2>&1
+  echo "=== Rollback Script Started ==="
+  echo "$LOG_FILE $(date '+%Y-%m-%d %H:%M:%S')"
+  echo "================================"
+fi
+
+# --- self-install --------------------------------------------------------------
 INSTALL_PATH="/usr/local/bin/rollback"
 SCRIPT_REAL=$(realpath "$0")
 if [ "$SCRIPT_REAL" != "$INSTALL_PATH" ]; then
@@ -22,23 +66,28 @@ do_finish() {
   mkdir -p /mnt/toprollback
   mount -o subvolid=5 "$ROOT_DEV" /mnt/toprollback
 
-  echo "Step 2: deleting old, now-inactive @ ..."
-  if [ -d "/mnt/toprollback/@" ]; then
-    btrfs subvolume delete "/mnt/toprollback/@"
-  fi
+  echo "Step 2: renaming old, now inactive @ to @oldtrash..."
+  [ -d "/mnt/toprollback/@" ] &&
+    mv "/mnt/toprollback/@" "/mnt/toprollback/@oldtrash"
 
-  echo "Step 3: renaming @new to @ ..."
+  echo "Step 3: deleting @oldtrash..."
+  [ -d "/mnt/toprollback/@oldtrash" ] &&
+    if ! btrfs subvolume delete "/mnt/toprollback/@oldtrash"; then
+      echo "Warning: failed to delete @oldtrash immediately (likely disk full). You can delete it later with rollback --finish."
+    fi
+
+  echo "Step 4: renaming @new to @ ..."
   mv "/mnt/toprollback/@new" "/mnt/toprollback/@"
 
-  echo "Step 4: setting @ as the default subvolume..."
+  echo "Step 5: setting @ as the default subvolume..."
   NEW_ID=$(btrfs subvolume list /mnt/toprollback | grep "path @$" | awk '{print $2}')
   btrfs subvolume set-default "$NEW_ID" /mnt/toprollback
   echo "Default subvolume set to @ (ID ${NEW_ID})."
 
-  echo "Step 5: unmounting top-level subvolume..."
+  echo "Step 6: unmounting top-level subvolume..."
   umount /mnt/toprollback
 
-  echo "Step 6: regenerating grub config..."
+  echo "Step 7: regenerating grub config..."
   if command -v update-grub >/dev/null; then
     update-grub
   fi
@@ -82,13 +131,6 @@ if [ "$1" = "--finish" ]; then
 fi
 
 TARGET_NUMBER="$1"
-
-if [ -z "$TARGET_NUMBER" ]; then
-  echo "Usage: rollback <snapshot-number>"
-  echo "       rollback --finish   (manual cleanup, only needed if auto-finish failed)"
-  echo "Run 'sudo snapper list' to see available snapshot numbers."
-  exit 1
-fi
 
 if [ "$ACTIVE_NAME" = "@new" ]; then
   echo "Error: active root is already '@new' — a rollback is in progress."
