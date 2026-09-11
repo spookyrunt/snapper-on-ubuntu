@@ -72,10 +72,10 @@ sudo tee /tmp/fstab >/dev/null
 sudo mv /tmp/fstab /etc/fstab
 
 echo "Reloading systemd manager configuration..."
-sudo systemctl daemon-reload
+systemctl daemon-reload
 
 echo "Applying new mount options..."
-sudo mount -a || {
+mount -a || {
     echo "mount -a failed! Restoring fstab from backup."
     sudo cp "$FSTAB_BACKUP" /etc/fstab
     sudo systemctl daemon-reload
