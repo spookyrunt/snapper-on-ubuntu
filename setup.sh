@@ -53,12 +53,12 @@ echo "fstab backup created at $FSTAB_BACKUP"
 echo "Updating /etc/fstab..."
 awk -v root_dev="$ROOT_DEV" '
 BEGIN { OFS="\t" }
-$2 == "/.snapshots" && !/^#/ { has_snapshots=1 }
-$3 == "btrfs" && !/^#/ {
+$2 == "/.snapshots" && $0 !~ /^[[:space:]]*#/ { has_snapshots=1 }
+$3 == "btrfs" && $0 !~ /^[[:space:]]*#/ {
     len = split($4, o, ","); n=""
     for (i = 1; i <= len; i++)
         if (o[i] != "" && o[i] != "noatime" &&
-            o[i] !~ /^compress(-force)?=/)
+            o[i] !~ /^compress(-force)?(=.*)?$/)
             n = (n ? n "," : "") o[i]
     $4 = (n ? n "," : "") "noatime,compress=zstd"
 }
