@@ -64,6 +64,14 @@ oldtrash_exists() {
 # the name "@" never changes, so GRUB's config and search path stay valid
 # across rollbacks without touching them.
 do_finish() {
+  CURRENT_NAME=$(btrfs subvolume show / | awk 'NR==1{print $1}')
+  if [ "$CURRENT_NAME" = "@oldtrash" ]; then
+    echo "Error: the live root is still running from '@oldtrash'."
+    echo "This script treats '@oldtrash' as a transient name before reboot."
+    echo "Reboot first, then finish will run automatically (or run --finish again)."
+    exit 1
+  fi
+
   echo "Step 1: mounting top-level subvolume..."
   mkdir -p /mnt/toprollback
   mount -o subvolid=5 "$ROOT_DEV" /mnt/toprollback
